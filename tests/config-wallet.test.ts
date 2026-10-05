@@ -27,8 +27,9 @@ describe("config", () => {
   });
 
   it("needs at least one LLM and image provider, and sane buy limits", () => {
-    expect(() => loadConfig({})).toThrow(/OPENAI_API_KEY and\/or ANTHROPIC_API_KEY/);
-    expect(() => loadConfig({ ANTHROPIC_API_KEY: "x" })).toThrow(/FAL_KEY/);
+    expect(() => loadConfig({})).toThrow(/at least one LLM/);
+    expect(() => loadConfig({ ANTHROPIC_API_KEY: "x", POLLINATIONS_ENABLED: "false" })).toThrow(/image provider/);
+    expect(() => loadConfig({ OLLAMA_ENABLED: "true" })).not.toThrow();
     expect(() => loadConfig({ OPENAI_API_KEY: "x", INITIAL_BUY_MIN_SOL: "0.1", INITIAL_BUY_MAX_SOL: "0.05" })).toThrow(/INITIAL_BUY_MAX_SOL/);
   });
 

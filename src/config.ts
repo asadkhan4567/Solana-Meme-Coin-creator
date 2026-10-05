@@ -58,6 +58,20 @@ const schema = z.object({
   FAL_KEY: str(),
   FLUX_MODEL: strDefault("fal-ai/flux/dev"),
 
+  // --- free providers ---
+  // Ollama: local LLM on your own PC, free. Needs a vision model to judge logos (e.g. gemma3, llama3.2-vision).
+  OLLAMA_ENABLED: bool(false),
+  OLLAMA_BASE_URL: strDefault("http://localhost:11434/v1"),
+  OLLAMA_MODEL: strDefault("gemma3"),
+  OLLAMA_MODEL_2: str(),
+  GROQ_API_KEY: str(),
+  GROQ_MODEL: strDefault("meta-llama/llama-4-scout-17b-16e-instruct"),
+  GEMINI_API_KEY: str(),
+  GEMINI_MODEL: strDefault("gemini-2.5-flash"),
+  // Pollinations: free Flux image API, no key. Set false to disable.
+  POLLINATIONS_ENABLED: bool(true),
+  POLLINATIONS_TOKEN: str(),
+
   // --- IPFS ---
   PINATA_JWT: str(),
   IPFS_GATEWAY: strDefault("https://ipfs.io/ipfs/"),
@@ -108,9 +122,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (cfg.MAX_DAILY_SPEND_SOL < cfg.INITIAL_BUY_MIN_SOL)
     problems.push("MAX_DAILY_SPEND_SOL must be >= INITIAL_BUY_MIN_SOL");
   if (cfg.MIN_TREND_SCORE < 0 || cfg.MIN_TREND_SCORE >= 1) problems.push("MIN_TREND_SCORE must be in [0, 1)");
-  if (!cfg.OPENAI_API_KEY && !cfg.ANTHROPIC_API_KEY)
-    problems.push("set OPENAI_API_KEY and/or ANTHROPIC_API_KEY");
-  if (!cfg.OPENAI_API_KEY && !cfg.FAL_KEY) problems.push("set OPENAI_API_KEY (DALL-E) and/or FAL_KEY (Flux)");
+  if (!cfg.OPENAI_API_KEY && !cfg.ANTHROPIC_API_KEY && !cfg.GROQ_API_KEY && !cfg.GEMINI_API_KEY && !cfg.OLLAMA_ENABLED)
+    problems.push("set at least one LLM: OLLAMA_ENABLED=true (local, free), GROQ_API_KEY / GEMINI_API_KEY (free) or OPENAI_API_KEY / ANTHROPIC_API_KEY");
+  if (!cfg.OPENAI_API_KEY && !cfg.FAL_KEY && !cfg.POLLINATIONS_ENABLED)
+    problems.push("enable an image provider: POLLINATIONS_ENABLED=true (free), OPENAI_API_KEY or FAL_KEY");
 
   if (!cfg.DRY_RUN) {
     if (!cfg.SIGNER_PRIVATE_KEY) problems.push("DRY_RUN=false requires SIGNER_PRIVATE_KEY");

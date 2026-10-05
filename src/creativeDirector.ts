@@ -88,7 +88,13 @@ export async function panelScores(
   count: number,
   images?: Parameters<LlmClient["json"]>[2],
 ): Promise<number[]> {
-  const scoreSchema = z.object({ scores: z.array(z.coerce.number().min(0).max(10)).length(count) });
+  // Small local models often return too many/few scores: clamp each to 0-10, then trim/pad to `count`.
+  const scoreSchema = z.object({
+    scores: z
+      .array(z.coerce.number().catch(0))
+      .min(1)
+      .transform((a) => Array.from({ length: count }, (_, i) => Math.min(10, Math.max(0, a[i] ?? 0)))),
+  });
   const votes = await settle(
     judges.map((j) => ({ name: j.name, run: async () => scoreSchema.parse(await j.json(system, prompt, images)).scores })),
   );
