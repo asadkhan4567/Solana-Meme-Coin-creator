@@ -87,7 +87,7 @@
         100
       ],
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000,
       "executeOnce": true
     },
@@ -106,7 +106,7 @@
         100
       ],
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000,
       "executeOnce": true
     },
@@ -145,19 +145,19 @@
       ],
       "credentials": {
         "googlePalmApi": {
-          "id": "",
+          "id": "vyJhkwEqt8ej3dSi",
           "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
         "authentication": "predefinedCredentialType",
         "sendBody": true,
         "specifyBody": "json",
@@ -176,12 +176,12 @@
       ],
       "credentials": {
         "googlePalmApi": {
-          "id": "",
+          "id": "vyJhkwEqt8ej3dSi",
           "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
@@ -211,7 +211,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
         "authentication": "predefinedCredentialType",
         "sendBody": true,
         "specifyBody": "json",
@@ -230,12 +230,12 @@
       ],
       "credentials": {
         "googlePalmApi": {
-          "id": "",
+          "id": "vyJhkwEqt8ej3dSi",
           "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
@@ -271,7 +271,7 @@
         100
       ],
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000
     },
     {
@@ -304,12 +304,12 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
+          "id": "peV32KVEGEG3tR3O",
           "name": "Pinata JWT"
         }
       },
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000
     },
     {
@@ -346,12 +346,12 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
+          "id": "peV32KVEGEG3tR3O",
           "name": "Pinata JWT"
         }
       },
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 5,
       "waitBetweenTries": 5000
     },
     {
@@ -381,7 +381,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
+          "id": "rkpLSc47dRX7hhXO",
           "name": "Meme Bot"
         }
       }
@@ -491,7 +491,7 @@
       "webhookId": "meme-agent-url",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
+          "id": "rkpLSc47dRX7hhXO",
           "name": "Meme Bot"
         }
       }
