@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 🤖 Autonomous Meme Coin Agent\nSchedule → **Trend Scout** (DexScreener) → two **Writer Agents** (Gemini) → **Judge Agent** → **Logo Artist** (Pollinations Flux) → **IPFS** (Pinata) → **your bot** signs & launches on pump.fun.\n\nThe bot enforces daily limits, the name filter and DRY_RUN. Nothing is sold automatically.",
+        "content": "## 🤖 Autonomous Meme Coin Agent\nSchedule → **Trend Scout** (DexScreener) → two **Writer Agents** (Gemini) → **Judge Agent** → **Logo Artist** (Flux, drawn by your bot) → **IPFS** (Pinata) → **your bot** signs & launches on pump.fun.\n\nThe bot enforces daily limits, the name filter and DRY_RUN. Nothing is sold automatically.",
         "width": 520,
         "height": 260,
         "color": 6
@@ -253,7 +253,13 @@
     },
     {
       "parameters": {
-        "url": "={{ 'https://image.pollinations.ai/prompt/' + encodeURIComponent($json.imagePrompt + '. Square meme-coin logo, single bold mascot centered, thick clean outlines, vivid flat colors, simple solid background, high contrast, no text, no letters, no watermark') + '?width=1024&height=1024&model=flux&nologo=true&seed=' + Math.floor(Math.random() * 1e9) }}",
+        "method": "POST",
+        "url": "={{ $('Gate: Hours & Bot URL').first().json.agentUrl + '/generate-logo' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $json.imagePrompt }) }}",
         "options": {
           "timeout": 180000,
           "response": {
@@ -270,6 +276,12 @@
         2400,
         100
       ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rkpLSc47dRX7hhXO",
+          "name": "Meme Bot"
+        }
+      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 5000

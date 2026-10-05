@@ -75,3 +75,25 @@ describe("POST /launch", () => {
     expect((await r.json()).status).toBe("dry_run");
   });
 });
+
+describe("POST /generate-logo", () => {
+  const d = { ...deps(), images: [
+    { name: "broken", generate: async () => { throw new Error("402"); } },
+    { name: "ok", generate: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]) },
+  ] };
+  const server = createControlServer(d, new Scheduler(d)).listen(0);
+  const url = () => `http://127.0.0.1:${(server.address() as AddressInfo).port}/generate-logo`;
+  afterAll(() => server.close());
+
+  it("falls back to the next provider and returns the image", async () => {
+    const r = await fetch(url(), { method: "POST", headers: { Authorization: "Bearer tok" }, body: JSON.stringify({ prompt: "a cartoon lobster" }) });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    expect(r.headers.get("x-image-provider")).toBe("ok");
+  });
+
+  it("requires the token and a prompt", async () => {
+    expect((await fetch(url(), { method: "POST", body: "{}" })).status).toBe(401);
+    expect((await fetch(url(), { method: "POST", headers: { Authorization: "Bearer tok" }, body: "{}" })).status).toBe(400);
+  });
+});

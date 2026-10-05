@@ -9,7 +9,7 @@ import { lamportsToSol, loadConfig, type Config } from "./config.js";
 import { buildSummary, DASHBOARD_HTML } from "./dashboard.js";
 import { log, setLogLevel } from "./logger.js";
 import { notify } from "./notify.js";
-import { buildImageProviders } from "./lib/imageGen.js";
+import { buildImageProviders, sniffMediaType } from "./lib/imageGen.js";
 import { buildLlms } from "./lib/llm.js";
 import { RpcPool } from "./lib/rpc.js";
 import { loadKeypair } from "./lib/wallet.js";
@@ -221,6 +221,29 @@ export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http
         if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
         const result = await scheduler.runOnce();
         return sendJson(res, result.status === "busy" ? 409 : 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/generate-logo") {
+        // n8n cloud's shared IPs get rate-limited by free image APIs; this machine draws the logo instead.
+        if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
+        let prompt = "";
+        try {
+          prompt = String((JSON.parse(await readBody(req, 8_000)) as { prompt?: unknown }).prompt ?? "").trim();
+        } catch {
+          return sendJson(res, 400, { error: "body must be JSON {prompt}" });
+        }
+        if (prompt.length < 5 || prompt.length > 1000) return sendJson(res, 400, { error: "prompt must be 5-1000 chars" });
+        const errors: string[] = [];
+        for (const p of deps.images) {
+          try {
+            const img = await p.generate(prompt);
+            res.writeHead(200, { "Content-Type": sniffMediaType(img), "X-Image-Provider": p.name, "Cache-Control": "no-store" });
+            return res.end(img);
+          } catch (err) {
+            errors.push(`${p.name}: ${String(err).slice(0, 200)}`);
+          }
+        }
+        log.warn("generate-logo failed", { errors });
+        return sendJson(res, 502, { error: "all image providers failed", errors });
       }
       if (req.method === "POST" && url.pathname === "/launch") {
         // n8n pipeline hands over a finished coin; the bot enforces limits, signs and sends.
