@@ -355,9 +355,13 @@ function hbars(node,rows,fmt){
 }
 
 /* ---------- views ---------- */
-function logoSrc(l){return l.imageUri||("./api/logo/"+encodeURIComponent(l.id))}
-function addLogo(box,l,fallback){var i=el("img",{alt:"",loading:"lazy",referrerpolicy:"no-referrer"});
-  i.addEventListener("error",function(){clear(box);if(fallback)box.textContent=fallback});i.src=logoSrc(l);box.appendChild(i)}
+function addLogo(box,l,fallback){
+  var local="./api/logo/"+encodeURIComponent(l.id);
+  var srcs=l.dryRun||!l.imageUri?[local]:[l.imageUri,local],k=0;
+  var i=el("img",{alt:"",loading:"lazy",referrerpolicy:"no-referrer"});
+  i.addEventListener("error",function(){k++;if(k<srcs.length){i.src=srcs[k]}else{clear(box);if(fallback)box.textContent=fallback}});
+  i.src=srcs[0];box.appendChild(i);
+}
 function coinCard(l){
   var b=el("button",{"class":"coin",type:"button"});
   var im=el("div",{"class":"img"});
