@@ -65,8 +65,39 @@ export class FluxProvider implements ImageProvider {
   }
 }
 
+/** Pollinations.ai: free Flux image generation, no key required (token optional for higher limits). */
+export class PollinationsProvider implements ImageProvider {
+  constructor(
+    readonly name: string,
+    private readonly model: string,
+    private readonly token?: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  async generate(prompt: string): Promise<Buffer> {
+    const seed = Math.floor(Math.random() * 1_000_000_000);
+    const qs = new URLSearchParams({
+      width: "1024",
+      height: "1024",
+      model: this.model,
+      nologo: "true",
+      seed: String(seed),
+    });
+    if (this.token) qs.set("token", this.token);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(logoPrompt(prompt))}?${qs}`;
+    const buf = await httpBytes(url, { fetchImpl: this.fetchImpl });
+    if (buf.length < 1000) throw new Error(`${this.name} returned an invalid image`);
+    return buf;
+  }
+}
+
 export function buildImageProviders(cfg: Config): ImageProvider[] {
   const out: ImageProvider[] = [];
+  if (cfg.POLLINATIONS_ENABLED) {
+    // Two free contestants so the AI judge still has a choice.
+    out.push(new PollinationsProvider("flux-free", "flux", cfg.POLLINATIONS_TOKEN));
+    out.push(new PollinationsProvider("flux-free-2", "flux", cfg.POLLINATIONS_TOKEN));
+  }
   if (cfg.OPENAI_API_KEY) out.push(new DalleProvider(cfg.OPENAI_API_KEY, cfg.OPENAI_IMAGE_MODEL));
   if (cfg.FAL_KEY) out.push(new FluxProvider(cfg.FAL_KEY, cfg.FLUX_MODEL));
   return out;
