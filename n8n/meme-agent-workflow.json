@@ -1,0 +1,62 @@
+{
+  "name": "Meme Agent - scheduler + alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] }
+      },
+      "id": "a1f0c6d2-0001-4c6e-9a10-000000000001",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.AGENT_URL }}/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $vars.AGENT_API_TOKEN }}" }]
+        },
+        "options": { "timeout": 600000 }
+      },
+      "id": "a1f0c6d2-0002-4c6e-9a10-000000000002",
+      "name": "Run agent cycle",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meme-agent-alerts",
+        "options": {}
+      },
+      "id": "a1f0c6d2-0003-4c6e-9a10-000000000003",
+      "name": "Agent alerts webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 240],
+      "webhookId": "meme-agent-alerts"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.body.event === 'launch' ? '🚀 Launched ' + $json.body.name + ' ($' + $json.body.ticker + ')\\n' + $json.body.pumpUrl + '\\nTheme: ' + $json.body.theme + ' | buy ' + $json.body.initialBuySol + ' SOL\\nWinners: ' + $json.body.llmWinner + ' / ' + $json.body.imageWinner : '[' + $json.body.event + '] ' + JSON.stringify($json.body) }}",
+        "additionalFields": {}
+      },
+      "id": "a1f0c6d2-0004-4c6e-9a10-000000000004",
+      "name": "Telegram me",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [240, 240],
+      "credentials": { "telegramApi": { "id": "REPLACE_ME", "name": "Telegram account" } }
+    }
+  ],
+  "connections": {
+    "Every hour": { "main": [[{ "node": "Run agent cycle", "type": "main", "index": 0 }]] },
+    "Agent alerts webhook": { "main": [[{ "node": "Telegram me", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
