@@ -299,7 +299,8 @@ function barChart(node,labels,series,colors){
     series.forEach(function(se,k){if(!se[i])return;var h=ih*se[i]/max;
       var r=svg("rect",{x:x,y:base-h,width:w,height:h,rx:3,fill:colors[k]});
       var ti=svg("title",{});ti.textContent=lab+": "+se[i];r.appendChild(ti);s.appendChild(r);base-=h});
-    if(labels.length<=14||i%Math.ceil(labels.length/12)===0){var t=svg("text",{x:x+w/2,y:H-8,"text-anchor":"middle",fill:C.faint,"font-size":10});t.textContent=lab;s.appendChild(t)}
+    var step=Math.max(1,Math.ceil(labels.length*46/iw));
+    if(i%step===0||i===labels.length-1&&labels.length<=step){var t=svg("text",{x:x+w/2,y:H-8,"text-anchor":"middle",fill:C.faint,"font-size":10});t.textContent=lab;s.appendChild(t)}
   });
   node.appendChild(s);
 }
@@ -354,10 +355,13 @@ function hbars(node,rows,fmt){
 }
 
 /* ---------- views ---------- */
+function logoSrc(l){return l.imageUri||("./api/logo/"+encodeURIComponent(l.id))}
+function addLogo(box,l,fallback){var i=el("img",{alt:"",loading:"lazy",referrerpolicy:"no-referrer"});
+  i.addEventListener("error",function(){clear(box);if(fallback)box.textContent=fallback});i.src=logoSrc(l);box.appendChild(i)}
 function coinCard(l){
   var b=el("button",{"class":"coin",type:"button"});
   var im=el("div",{"class":"img"});
-  if(l.imageUri){var i=el("img",{alt:"",loading:"lazy",referrerpolicy:"no-referrer"});i.src=l.imageUri;im.appendChild(i)}else im.textContent=(l.ticker||"?").slice(0,4);
+  addLogo(im,l,(l.ticker||"?").slice(0,4));
   b.appendChild(im);
   var body=el("div",{"class":"body"}),t=el("div",{"class":"t"});t.appendChild(el("b",null,l.name));t.appendChild(tag(l));body.appendChild(t);
   var m=el("div",{"class":"meta"});m.appendChild(el("span",{"class":"mono"},"$"+l.ticker));m.appendChild(el("span",null,ago(l.createdAt)));body.appendChild(m);
@@ -452,7 +456,7 @@ function renderHeader(d){
 
 /* ---------- detail modal ---------- */
 function openDetail(l){
-  var th=clear($("d-thumb"));if(l.imageUri){var i=el("img",{alt:"",referrerpolicy:"no-referrer"});i.src=l.imageUri;th.appendChild(i)}
+  addLogo(clear($("d-thumb")),l,"");
   $("d-name").textContent=l.name;$("d-ticker").textContent="$"+l.ticker+"  |  "+fmtTime(l.createdAt);
   var kv=clear($("d-kv"));
   [["Status",l.dryRun?"dry run":l.outcome],["Theme",l.theme],["Initial buy",sol(l.buySol)+" SOL"],["Fees",sol(l.feesSol)+" SOL"],

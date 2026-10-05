@@ -9,6 +9,7 @@ export interface ContestRow {
 }
 
 export interface LaunchRow {
+  id: string;
   createdAt: string;
   name: string;
   ticker: string;
@@ -125,6 +126,7 @@ export function buildSummary(
       .reverse()
       .slice(0, 100)
       .map((l) => ({
+        id: l.id,
         createdAt: l.createdAt,
         name: l.name,
         ticker: l.ticker,
