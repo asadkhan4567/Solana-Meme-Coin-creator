@@ -12,12 +12,14 @@ Built on the official [pump-fun-skills](https://github.com/pump-fun/pump-fun-ski
  3. Gates       paused? outside launch hours? daily launch / spend limit hit? -> stop here
  4. Scan        DexScreener (+ X if you have a token) -> score trending words -> pick ONE theme
  5. Create      Claude AND ChatGPT each invent a coin (name, ticker, description)
+                -> "don't copy" check: ticker/name already on pump.fun or a DEX? -> AI picks a new one
                 -> both AIs judge both ideas -> best one wins
  6. Logo        DALL-E AND Flux each draw a logo -> AIs judge the images -> best one wins
  7. Upload      logo + metadata JSON -> IPFS (Pinata) -> metadata URI
  8. Size        stronger trend = bigger initial buy (between your min and max)
  9. Launch      check wallet balance -> pump.fun builds tx -> verify -> sign -> simulate -> send
-10. Report      save everything to out/<run>/, send an alert to n8n -> Telegram
+10. Announce    post the coin (logo, link, contract address) to your Telegram channel and X
+11. Report      save everything to out/<run>/, show it on the dashboard, alert n8n -> Telegram
 ```
 
 With `DRY_RUN=true` (the default) step 9 stops after the simulation: **no SOL is spent**.
@@ -36,6 +38,8 @@ With `DRY_RUN=true` (the default) step 9 stops after the simulation: **no SOL is
 | Learning loop | Tracks each coin at 1h/24h; trend sources that produce winners get picked more | `SUCCESS_MCAP_USD` |
 | Circuit breaker | After N flops in a row, pauses launching so a bad market can't drain the wallet | `LOSS_STREAK_PAUSE`, `PAUSE_HOURS` |
 | Name safety | Blocks celebrity, brand and famous-ticker names (these get flagged as scams) | `BLOCKED_TERMS` |
+| Don't copy | Skips any ticker/name already used on pump.fun or a Solana DEX; the AI picks a new one | `TICKER_CHECK_*` |
+| Auto-posting | Announces each live launch with its logo on Telegram and X to bring in buyers | `TELEGRAM_*`, `X_*` |
 
 **What it does not do:** it never auto-sells your coins into buyers (that is a pump-and-dump). Your initial-buy tokens stay in your wallet; you decide if and when to sell.
 
@@ -65,7 +69,7 @@ With `DRY_RUN=true` (the default) step 9 stops after the simulation: **no SOL is
 4. **Install & test:**
    ```bash
    npm install
-   npm test          # 39 tests, no keys needed
+   npm test          # 56 tests, no keys needed
    npm run once      # one full dry-run cycle; look in out/<run>/ for the logos + summary
    ```
 5. **Go live** when the dry runs look good: set `DRY_RUN=false`.
@@ -76,6 +80,24 @@ With `DRY_RUN=true` (the default) step 9 stops after the simulation: **no SOL is
 2. Add all `.env` values as Railway **Variables**.
 3. Add a **Volume** mounted at `/app/data` (keeps launch history across restarts).
 4. Open `https://<your-app>.up.railway.app/health` to check it.
+
+## Dashboard
+
+Open `https://<your-app>/dashboard`. The browser asks for a login: type any username and your
+`AGENT_API_TOKEN` as the password. It shows wallet balance, coins launched, SOL spent, creator fees
+earned, win rate, which AI wins the idea and logo contests (and how often its coins succeed), and
+every launch with its result, market cap, fees and links. It refreshes every minute.
+
+## Auto-posting
+
+Each **live** launch is posted to every channel you configure; dry runs only write
+`out/<run>/posts-preview.txt` so you can check the wording first. Posts contain the name, ticker,
+the AI's one-liner, the pump.fun link, the contract address and `POST_DISCLAIMER`, and never
+promise gains (X and Telegram ban accounts for that). A failed post never fails a launch; it shows
+as "failed" on the dashboard.
+
+- **Telegram:** create a bot with @BotFather, add it as an admin of your channel, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID`.
+- **X:** needs an X developer app with **Read and write** permission (posting needs at least the free tier; check X's current limits). Set the four `X_*` keys. If the image upload is refused the post goes out as text.
 
 ## n8n (scheduler + Telegram alerts)
 
@@ -94,6 +116,8 @@ The bot schedules itself (`CYCLE_INTERVAL_MIN`). n8n is optional but handy:
 | `POST /run` | Bearer `AGENT_API_TOKEN` | run one cycle now |
 | `POST /collect-fees` | Bearer | harvest creator fees now |
 | `GET /launches` | Bearer | last 50 launches |
+| `GET /dashboard` | Basic (password = token) | the dashboard page |
+| `GET /api/summary` | Bearer or Basic | the dashboard's data as JSON |
 
 ## Project layout
 
@@ -107,6 +131,9 @@ src/
   metadataUploader.ts   Pinata IPFS upload -> metadata URI
   coinDeployer.ts       pump.fun create-coin API -> verify -> sign -> simulate -> send/Jito -> confirm
   guards.ts             name filter, launch hours, daily caps, position sizing, funds needed
+  tickerCheck.ts        "don't copy": pump.fun + DexScreener search for the ticker/name
+  promoter.ts           Telegram + X launch posts (lib/oauth1.ts signs X requests)
+  dashboard.ts          dashboard numbers + the self-contained HTML page
   strategies/
     feeHarvester.ts     creator-fee collection
     performanceTracker.ts  1h/24h outcomes, source stats, circuit breaker

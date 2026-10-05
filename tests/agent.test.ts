@@ -86,3 +86,49 @@ describe("performance tracker", () => {
     expect(store.state.launches[0]!.outcome).toBe("success");
   });
 });
+
+describe("agent cycle: posting and don't-copy", () => {
+  const liveEnv = { DRY_RUN: "false", SIGNER_PRIVATE_KEY: "x", PINATA_JWT: "j", SOLANA_RPC_URL: "https://rpc.test", TELEGRAM_BOT_TOKEN: "1:T", TELEGRAM_CHANNEL_ID: "@chan" };
+
+  function routed(d: AgentDeps, extra: (url: string) => Response | undefined) {
+    const original = d.fetchImpl!;
+    d.fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      return extra(url) ?? original(input, init);
+    }) as typeof fetch;
+    return d;
+  }
+
+  it("live launch: uploads, launches, then posts to Telegram and records the link", async () => {
+    const d = routed(deps({}, liveEnv), (url) => {
+      if (url.includes("/coins/search") ) return jsonResponse([]);
+      if (url.includes("/latest/dex/search")) return jsonResponse({ pairs: [] });
+      if (url.includes("pinata")) return jsonResponse({ IpfsHash: "Qm123" });
+      if (url.includes("api.telegram.org")) return jsonResponse({ ok: true, result: { message_id: 7, chat: { username: "chan" } } });
+      return undefined;
+    });
+    const r = await runCycle(d);
+    expect(r.status).toBe("launched");
+    const rec = d.store.state.launches[0]!;
+    expect(rec.imageUri).toBe("https://ipfs.io/ipfs/Qm123");
+    expect(rec.posts).toEqual([{ channel: "telegram", ok: true, url: "https://t.me/chan/7" }]);
+  });
+
+  it("dry run writes a post preview instead of posting", async () => {
+    const r = await runCycle(deps({}, { TELEGRAM_BOT_TOKEN: "1:T", TELEGRAM_CHANNEL_ID: "@chan" }));
+    const preview = fs.readFileSync(path.join(r.outDir!, "posts-preview.txt"), "utf8");
+    expect(preview).toContain("--- x ---");
+    expect(preview).toContain("$KROAK");
+  });
+
+  it("skips concepts whose ticker is already on pump.fun", async () => {
+    const d = routed(deps(), (url) => {
+      if (url.includes("/coins/search") && url.includes("KROAK")) return jsonResponse([{ name: "x", symbol: "KROAK" }]);
+      if (url.includes("/coins/search")) return jsonResponse([]);
+      if (url.includes("/latest/dex/search")) return jsonResponse({ pairs: [] });
+      return undefined;
+    });
+    const r = await runCycle(d);
+    expect(r.ticker).toBe("CROAK");
+  });
+});

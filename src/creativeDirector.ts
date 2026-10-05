@@ -97,22 +97,49 @@ export async function panelScores(
   return totals;
 }
 
-export async function generateConcepts(trend: Trend, llms: LlmClient[], blocked: string[]): Promise<ConceptCandidate[]> {
-  const user = `${trendBrief(trend)}\n\nCreate the coin.`;
+/** Returns a rejection reason, or null if the ticker/name is free to use. */
+export type TakenCheck = (ticker: string, name: string) => Promise<string | null>;
+
+const MAX_CONCEPT_ATTEMPTS = 3;
+
+export async function generateConcepts(
+  trend: Trend,
+  llms: LlmClient[],
+  blocked: string[],
+  isTaken?: TakenCheck,
+): Promise<ConceptCandidate[]> {
+  const base = `${trendBrief(trend)}\n\nCreate the coin.`;
   const raw = await settle(
     llms.map((l) => ({
       name: l.name,
       run: async () => {
-        // One self-healing retry if the model returns invalid / disallowed output.
-        for (let attempt = 0; attempt < 2; attempt++) {
+        // Self-healing: on invalid, blocked or already-used output, tell the model why and ask again.
+        const rejected: string[] = [];
+        for (let attempt = 0; attempt < MAX_CONCEPT_ATTEMPTS; attempt++) {
+          const user = rejected.length
+            ? `${base}\n\nThese were rejected, do something different:\n${rejected.map((r) => `- ${r}`).join("\n")}`
+            : base;
           const parsed = conceptSchema.safeParse(await l.json(CONCEPT_SYSTEM, user));
-          if (parsed.success) {
-            const allowed = checkNameAllowed(parsed.data.name, parsed.data.ticker, blocked);
-            if (allowed.ok) return parsed.data;
-            log.warn("concept rejected by name filter", { provider: l.name, reason: allowed.reason });
+          if (!parsed.success) {
+            rejected.push("invalid JSON / fields out of range");
+            continue;
           }
+          const { name, ticker } = parsed.data;
+          const allowed = checkNameAllowed(name, ticker, blocked);
+          if (!allowed.ok) {
+            log.warn("concept rejected by name filter", { provider: l.name, ticker, reason: allowed.reason });
+            rejected.push(`${name} ($${ticker}): ${allowed.reason}`);
+            continue;
+          }
+          const taken = isTaken ? await isTaken(ticker, name) : null;
+          if (taken) {
+            log.warn("concept rejected: don't-copy check", { provider: l.name, ticker, reason: taken });
+            rejected.push(`${name} ($${ticker}): ${taken} - invent a new, unused ticker`);
+            continue;
+          }
+          return parsed.data;
         }
-        throw new Error("no valid concept after 2 attempts");
+        throw new Error(`no valid concept after ${MAX_CONCEPT_ATTEMPTS} attempts`);
       },
     })),
   );
@@ -163,11 +190,12 @@ export async function runCreativeDirector(
   images: ImageProvider[],
   outDir: string,
   blocked: string[] = [],
+  isTaken?: TakenCheck,
 ): Promise<CreativeResult> {
   if (llms.length === 0) throw new Error("no LLM provider configured");
   if (images.length === 0) throw new Error("no image provider configured");
 
-  const concepts = await judgeConcepts(trend, await generateConcepts(trend, llms, blocked), llms);
+  const concepts = await judgeConcepts(trend, await generateConcepts(trend, llms, blocked, isTaken), llms);
   const best = concepts[0];
   if (!best) throw new Error("every LLM failed to produce a usable concept");
 

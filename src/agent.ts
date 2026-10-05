@@ -8,6 +8,8 @@ import { canLaunch, dailyStats, sizeInitialBuy } from "./guards.js";
 import { log } from "./logger.js";
 import { uploadMetadata, buildMetadata } from "./metadataUploader.js";
 import { notify } from "./notify.js";
+import { buildPostText, promoteLaunch, promotionChannels } from "./promoter.js";
+import { tickerGuard } from "./tickerCheck.js";
 import type { ImageProvider } from "./lib/imageGen.js";
 import type { LlmClient } from "./lib/llm.js";
 import { harvestFees } from "./strategies/feeHarvester.js";
@@ -92,7 +94,8 @@ export async function runCycle(deps: AgentDeps): Promise<CycleResult> {
     }
     log.info("trend picked", { theme: trend.theme, score: trend.score, sources: trend.sources });
 
-    creative = await runCreativeDirector(trend, deps.llms, deps.images, outDir, cfg.BLOCKED_TERMS);
+    const isTaken = cfg.TICKER_CHECK_ENABLED ? tickerGuard(cfg, deps.fetchImpl) : undefined;
+    creative = await runCreativeDirector(trend, deps.llms, deps.images, outDir, cfg.BLOCKED_TERMS, isTaken);
     const { concept } = creative;
 
     const uploaded =
@@ -122,12 +125,31 @@ export async function runCycle(deps: AgentDeps): Promise<CycleResult> {
       llmWinner: creative.llmWinner,
       imageWinner: creative.imageWinner,
       metadataUri: uploaded.metadataUri,
+      imageUri: uploaded.imageUri,
       initialBuyLamports: initialBuy.toString(),
       ...(deploy.dryRun ? {} : { mint: deploy.mint, signature: deploy.signature }),
       snapshots: [],
       outcome: "pending",
       feesCollectedLamports: "0",
     });
+
+    // Announce the launch. Dry runs only write a preview of what would be posted.
+    const post = {
+      name: concept.name,
+      ticker: concept.ticker,
+      description: concept.description,
+      ...(concept.twitterHook ? { hook: concept.twitterHook } : {}),
+      mint: deploy.mint,
+      logoFile: creative.logoFile,
+    };
+    if (deploy.dryRun) {
+      const preview = ["--- telegram ---", buildPostText(post, cfg.POST_DISCLAIMER, "telegram"), "", "--- x ---", buildPostText(post, cfg.POST_DISCLAIMER, "x")].join("\n");
+      fs.writeFileSync(path.join(outDir, "posts-preview.txt"), preview);
+    } else if (promotionChannels(cfg).length) {
+      const record = store.state.launches.at(-1)!;
+      record.posts = await promoteLaunch(cfg, post, deps.fetchImpl);
+      store.save();
+    }
 
     const result: CycleResult = {
       runId,

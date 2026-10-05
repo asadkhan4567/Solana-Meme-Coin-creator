@@ -14,7 +14,9 @@ export class HttpError extends Error {
     readonly url: string,
     readonly body: string,
   ) {
-    super(`HTTP ${status} from ${new URL(url).host}${new URL(url).pathname}: ${body.slice(0, 300)}`);
+    // Telegram puts the bot token in the path: never let it reach logs.
+    const where = `${new URL(url).host}${new URL(url).pathname.replace(/\/bot[^/]+/, "/bot[redacted]")}`;
+    super(`HTTP ${status} from ${where}: ${body.slice(0, 300)}`);
     this.name = "HttpError";
   }
   get retryable(): boolean {

@@ -22,7 +22,9 @@ export interface LaunchRecord {
   llmWinner: string;
   imageWinner: string;
   metadataUri: string;
+  imageUri?: string;
   initialBuyLamports: string;
+  posts?: { channel: string; ok: boolean; url?: string; error?: string }[];
   mint?: string;
   signature?: string;
   snapshots: Snapshot[];

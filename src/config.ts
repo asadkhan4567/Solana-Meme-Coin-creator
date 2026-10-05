@@ -79,6 +79,20 @@ const schema = z.object({
   FEE_COLLECT_INTERVAL_MIN: num(360),
   BLOCKED_TERMS: list(),
 
+  // --- "don't copy" check ---
+  TICKER_CHECK_ENABLED: bool(true),
+  /** If both search APIs are down: false = skip that concept (safe), true = allow it. */
+  TICKER_CHECK_FAIL_OPEN: bool(false),
+
+  // --- auto-posting (live launches only) ---
+  TELEGRAM_BOT_TOKEN: str(),
+  TELEGRAM_CHANNEL_ID: str(),
+  X_API_KEY: str(),
+  X_API_SECRET: str(),
+  X_ACCESS_TOKEN: str(),
+  X_ACCESS_SECRET: str(),
+  POST_DISCLAIMER: strDefault("Just a meme coin, no promises. Not financial advice - DYOR."),
+
   // --- runtime ---
   CYCLE_INTERVAL_MIN: num(60),
   PORT: num(8080),

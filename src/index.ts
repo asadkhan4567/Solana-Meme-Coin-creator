@@ -1,7 +1,9 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 import http from "node:http";
 import { runCycle, type AgentDeps, type CycleResult } from "./agent.js";
 import { lamportsToSol, loadConfig, type Config } from "./config.js";
+import { buildSummary, DASHBOARD_HTML } from "./dashboard.js";
 import { log, setLogLevel } from "./logger.js";
 import { notify } from "./notify.js";
 import { buildImageProviders } from "./lib/imageGen.js";
@@ -85,8 +87,26 @@ export class Scheduler {
   }
 }
 
-function authorized(req: http.IncomingMessage, cfg: Config): boolean {
-  return Boolean(cfg.AGENT_API_TOKEN) && req.headers.authorization === `Bearer ${cfg.AGENT_API_TOKEN}`;
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+/**
+ * Accepts `Authorization: Bearer <AGENT_API_TOKEN>` (n8n, scripts) or HTTP Basic with the token
+ * as the password (any username) so the dashboard works with the browser's own login prompt.
+ */
+export function authorized(req: http.IncomingMessage, cfg: Pick<Config, "AGENT_API_TOKEN">): boolean {
+  const token = cfg.AGENT_API_TOKEN;
+  const header = req.headers.authorization ?? "";
+  if (!token) return false;
+  if (header.startsWith("Bearer ")) return safeEqual(header.slice(7), token);
+  if (header.startsWith("Basic ")) {
+    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
+    return safeEqual(decoded.slice(decoded.indexOf(":") + 1), token);
+  }
+  return false;
 }
 
 const sendJson = (res: http.ServerResponse, code: number, body: unknown) => {
@@ -94,21 +114,46 @@ const sendJson = (res: http.ServerResponse, code: number, body: unknown) => {
   res.end(JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
 };
 
-/** Tiny control API so n8n (or you) can trigger runs and watch health. */
-export function startServer(deps: AgentDeps, scheduler: Scheduler): http.Server {
+async function walletBalanceSol(deps: AgentDeps): Promise<number | null> {
+  if (!deps.wallet || !deps.rpc) return null;
+  const lamports = await deps.rpc.call("getBalance", (c) => c.getBalance(deps.wallet!.publicKey)).catch(() => null);
+  return lamports === null ? null : lamportsToSol(lamports);
+}
+
+/** Tiny control API + dashboard so n8n (or you) can trigger runs and watch results. */
+export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http.Server {
   const { cfg, store } = deps;
-  const server = http.createServer(async (req, res) => {
+  return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
+      if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
+        if (!authorized(req, cfg)) {
+          res.writeHead(401, { "WWW-Authenticate": 'Basic realm="meme-agent", charset="UTF-8"', "Content-Type": "text/plain" });
+          return res.end(cfg.AGENT_API_TOKEN ? "Log in with any username and your AGENT_API_TOKEN as the password." : "Set AGENT_API_TOKEN to enable the dashboard.");
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'",
+          "X-Frame-Options": "DENY",
+          "Cache-Control": "no-store",
+        });
+        return res.end(DASHBOARD_HTML);
+      }
+      if (req.method === "GET" && url.pathname === "/api/summary") {
+        if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
+        return sendJson(res, 200, buildSummary(store.state, {
+          dryRun: cfg.DRY_RUN,
+          wallet: deps.wallet?.publicKey.toBase58() ?? null,
+          balanceSol: await walletBalanceSol(deps),
+        }));
+      }
       if (req.method === "GET" && url.pathname === "/health") {
-        const balance = deps.wallet && deps.rpc
-          ? await deps.rpc.call("getBalance", (c) => c.getBalance(deps.wallet!.publicKey)).catch(() => null)
-          : null;
+        const balanceSol = await walletBalanceSol(deps);
         return sendJson(res, 200, {
           ok: scheduler.consecutiveFailures < 3,
           dryRun: cfg.DRY_RUN,
           wallet: deps.wallet?.publicKey.toBase58() ?? null,
-          balanceSol: balance === null ? null : lamportsToSol(balance),
+          balanceSol,
           lastRunAt: scheduler.lastRunAt ?? null,
           lastStatus: scheduler.lastResult?.status ?? null,
           consecutiveFailures: scheduler.consecutiveFailures,
@@ -137,7 +182,11 @@ export function startServer(deps: AgentDeps, scheduler: Scheduler): http.Server 
       sendJson(res, 500, { error: "internal error" });
     }
   });
-  server.listen(cfg.PORT, () => log.info("control API listening", { port: cfg.PORT }));
+}
+
+export function startServer(deps: AgentDeps, scheduler: Scheduler): http.Server {
+  const server = createControlServer(deps, scheduler);
+  server.listen(deps.cfg.PORT, () => log.info("control API + dashboard listening", { port: deps.cfg.PORT, dashboard: "/dashboard" }));
   return server;
 }
 
