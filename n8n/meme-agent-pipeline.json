@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "content": "### Setup (credentials → *Header Auth*)\n1. **Gemini API key**: name `x-goog-api-key`, value = your key (aistudio.google.com/apikey)\n2. **Pinata JWT**: name `Authorization`, value `Bearer <JWT>`\n3. **Meme Bot**: name `Authorization`, value `Bearer <AGENT_API_TOKEN>`\n4. Activate the workflow. The bot checks in its tunnel URL automatically.",
+        "content": "### Setup (credentials → *Header Auth*)\n1. **Google Gemini(PaLM) Api**: your key from aistudio.google.com/apikey\n2. **Pinata JWT**: name `Authorization`, value `Bearer <JWT>`\n3. **Meme Bot**: name `Authorization`, value `Bearer <AGENT_API_TOKEN>`\n4. Activate the workflow. The bot checks in its tunnel URL automatically.",
         "width": 520,
         "height": 260,
         "color": 4
@@ -127,14 +127,14 @@
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a degen crypto copywriter with sharp, punchy humor who invents Solana meme coins for pump.fun. Trend word: \"' + $('Trend Scout').first().json.theme + '\". Invent ONE original coin built around it. Rules: never use real people, brands, celebrities or existing famous coins/tickers; no promises of profit. Reply ONLY with JSON: {\"name\": 2-32 chars, \"ticker\": 3-8 uppercase letters, \"description\": one absurd funny sentence max 200 chars, \"imagePrompt\": vivid description of ONE cartoon mascot for the logo, no text, \"twitterHook\": short punchy line}' }] }], generationConfig: { temperature: 1.1, responseMimeType: 'application/json' } }) }}",
         "options": {
           "timeout": 60000
-        }
+        },
+        "nodeCredentialType": "googlePalmApi"
       },
       "name": "Writer Agent A (degen)",
       "type": "n8n-nodes-base.httpRequest",
@@ -144,9 +144,9 @@
         0
       ],
       "credentials": {
-        "httpHeaderAuth": {
+        "googlePalmApi": {
           "id": "",
-          "name": "Gemini API key"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
@@ -158,14 +158,14 @@
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a surreal absurdist comedian who loves weird animal mascots who invents Solana meme coins for pump.fun. Trend word: \"' + $('Trend Scout').first().json.theme + '\". Invent ONE original coin built around it. Rules: never use real people, brands, celebrities or existing famous coins/tickers; no promises of profit. Reply ONLY with JSON: {\"name\": 2-32 chars, \"ticker\": 3-8 uppercase letters, \"description\": one absurd funny sentence max 200 chars, \"imagePrompt\": vivid description of ONE cartoon mascot for the logo, no text, \"twitterHook\": short punchy line}' }] }], generationConfig: { temperature: 1.3, responseMimeType: 'application/json' } }) }}",
         "options": {
           "timeout": 60000
-        }
+        },
+        "nodeCredentialType": "googlePalmApi"
       },
       "name": "Writer Agent B (absurdist)",
       "type": "n8n-nodes-base.httpRequest",
@@ -175,9 +175,9 @@
         220
       ],
       "credentials": {
-        "httpHeaderAuth": {
+        "googlePalmApi": {
           "id": "",
-          "name": "Gemini API key"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
@@ -212,14 +212,14 @@
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You judge meme coin concepts for the trend \"' + $json.theme + '\". Score each 0-10 for humor, memorability, ticker punchiness and fit to the trend. Penalize anything resembling a real person, brand or existing coin. Concepts: ' + JSON.stringify($json.concepts.map((c, i) => ({ i, name: c.name, ticker: c.ticker, description: c.description }))) + '. Reply ONLY with JSON {\"scores\": [one number per concept, same order], \"why\": short reason}' }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }) }}",
         "options": {
           "timeout": 60000
-        }
+        },
+        "nodeCredentialType": "googlePalmApi"
       },
       "name": "Judge Agent",
       "type": "n8n-nodes-base.httpRequest",
@@ -229,9 +229,9 @@
         100
       ],
       "credentials": {
-        "httpHeaderAuth": {
+        "googlePalmApi": {
           "id": "",
-          "name": "Gemini API key"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "retryOnFail": true,
