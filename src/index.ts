@@ -35,6 +35,7 @@ export class Scheduler {
   consecutiveFailures = 0;
   lastResult?: CycleResult;
   lastRunAt?: string;
+  nextRunAt?: string;
   private timer?: NodeJS.Timeout;
 
   constructor(private readonly deps: AgentDeps) {}
@@ -77,6 +78,7 @@ export class Scheduler {
       await this.runOnce();
       const delay = this.nextDelayMs();
       log.info("next cycle scheduled", { inMinutes: Math.round(delay / 60_000), consecutiveFailures: this.consecutiveFailures });
+      this.nextRunAt = new Date(Date.now() + delay).toISOString();
       this.timer = setTimeout(tick, delay);
     };
     this.timer = setTimeout(tick, 5_000);
@@ -145,6 +147,23 @@ export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http
           dryRun: cfg.DRY_RUN,
           wallet: deps.wallet?.publicKey.toBase58() ?? null,
           balanceSol: await walletBalanceSol(deps),
+          status: {
+            lastRunAt: scheduler.lastRunAt ?? null,
+            lastStatus: scheduler.lastResult?.status ?? null,
+            nextRunAt: scheduler.nextRunAt ?? null,
+            consecutiveFailures: scheduler.consecutiveFailures,
+          },
+          settings: {
+            launchHoursUtc: cfg.LAUNCH_HOURS_UTC || "any",
+            cycleIntervalMin: cfg.CYCLE_INTERVAL_MIN,
+            maxLaunchesPerDay: cfg.MAX_LAUNCHES_PER_DAY,
+            maxDailySpendSol: cfg.MAX_DAILY_SPEND_SOL,
+            initialBuyMinSol: cfg.INITIAL_BUY_MIN_SOL,
+            initialBuyMaxSol: cfg.INITIAL_BUY_MAX_SOL,
+            minTrendScore: cfg.MIN_TREND_SCORE,
+            llms: deps.llms.map((l) => l.name),
+            images: deps.images.map((i) => i.name),
+          },
         }));
       }
       if (req.method === "GET" && url.pathname === "/health") {
