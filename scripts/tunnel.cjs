@@ -40,7 +40,10 @@ async function checkIn() {
   }
 }
 
-const cf = spawn("cloudflared", ["tunnel", "--no-autoupdate", "--url", `http://localhost:${port}`], { windowsHide: true });
+// Prefer a standalone copy in ./bin (no admin install needed), else cloudflared on PATH.
+const localBin = path.join(root, "bin", process.platform === "win32" ? "cloudflared.exe" : "cloudflared");
+const cfBin = fs.existsSync(localBin) ? localBin : "cloudflared";
+const cf = spawn(cfBin, ["tunnel", "--no-autoupdate", "--url", `http://localhost:${port}`], { windowsHide: true });
 const onData = (buf) => {
   const m = String(buf).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
   if (m && m[0] !== publicUrl) {
