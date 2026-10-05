@@ -1,3 +1,5 @@
+import path from "node:path";
+import fs from "node:fs";
 import "dotenv/config";
 import crypto from "node:crypto";
 import http from "node:http";
@@ -35,6 +37,7 @@ export class Scheduler {
   consecutiveFailures = 0;
   lastResult?: CycleResult;
   lastRunAt?: string;
+  nextRunAt?: string;
   private timer?: NodeJS.Timeout;
 
   constructor(private readonly deps: AgentDeps) {}
@@ -77,6 +80,7 @@ export class Scheduler {
       await this.runOnce();
       const delay = this.nextDelayMs();
       log.info("next cycle scheduled", { inMinutes: Math.round(delay / 60_000), consecutiveFailures: this.consecutiveFailures });
+      this.nextRunAt = new Date(Date.now() + delay).toISOString();
       this.timer = setTimeout(tick, delay);
     };
     this.timer = setTimeout(tick, 5_000);
@@ -133,11 +137,25 @@ export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http
         }
         res.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
-          "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'",
+          "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'",
           "X-Frame-Options": "DENY",
           "Cache-Control": "no-store",
         });
         return res.end(DASHBOARD_HTML);
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/api/logo/")) {
+        // Serves the winning logo saved on disk for a launch (dry runs have no IPFS image).
+        if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
+        const id = decodeURIComponent(url.pathname.slice("/api/logo/".length));
+        const rec = store.state.launches.find((l) => l.id === id);
+        if (!rec || !/^[0-9A-Za-z-]+$/.test(id)) return sendJson(res, 404, { error: "not found" });
+        const dir = path.resolve(cfg.OUT_DIR, id);
+        const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^logo-[\w-]+\.(png|jpe?g|webp)$/.test(f)) : [];
+        const file = files.find((f) => f.startsWith(`logo-${rec.imageWinner}.`)) ?? files[0];
+        if (!file) return sendJson(res, 404, { error: "no logo" });
+        const ext = path.extname(file).slice(1).replace("jpg", "jpeg");
+        res.writeHead(200, { "Content-Type": `image/${ext}`, "Cache-Control": "private, max-age=86400" });
+        return res.end(fs.readFileSync(path.join(dir, file)));
       }
       if (req.method === "GET" && url.pathname === "/api/summary") {
         if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
@@ -145,6 +163,23 @@ export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http
           dryRun: cfg.DRY_RUN,
           wallet: deps.wallet?.publicKey.toBase58() ?? null,
           balanceSol: await walletBalanceSol(deps),
+          status: {
+            lastRunAt: scheduler.lastRunAt ?? null,
+            lastStatus: scheduler.lastResult?.status ?? null,
+            nextRunAt: scheduler.nextRunAt ?? null,
+            consecutiveFailures: scheduler.consecutiveFailures,
+          },
+          settings: {
+            launchHoursUtc: cfg.LAUNCH_HOURS_UTC || "any",
+            cycleIntervalMin: cfg.CYCLE_INTERVAL_MIN,
+            maxLaunchesPerDay: cfg.MAX_LAUNCHES_PER_DAY,
+            maxDailySpendSol: cfg.MAX_DAILY_SPEND_SOL,
+            initialBuyMinSol: cfg.INITIAL_BUY_MIN_SOL,
+            initialBuyMaxSol: cfg.INITIAL_BUY_MAX_SOL,
+            minTrendScore: cfg.MIN_TREND_SCORE,
+            llms: deps.llms.map((l) => l.name),
+            images: deps.images.map((i) => i.name),
+          },
         }));
       }
       if (req.method === "GET" && url.pathname === "/health") {
