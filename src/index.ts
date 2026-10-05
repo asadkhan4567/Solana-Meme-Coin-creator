@@ -1,3 +1,4 @@
+import { runExternalLaunch } from "./externalLaunch.js";
 import path from "node:path";
 import fs from "node:fs";
 import "dotenv/config";
@@ -124,6 +125,22 @@ async function walletBalanceSol(deps: AgentDeps): Promise<number | null> {
   return lamports === null ? null : lamportsToSol(lamports);
 }
 
+function readBody(req: http.IncomingMessage, limit: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error("body too large"));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
 /** Tiny control API + dashboard so n8n (or you) can trigger runs and watch results. */
 export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http.Server {
   const { cfg, store } = deps;
@@ -204,6 +221,19 @@ export function createControlServer(deps: AgentDeps, scheduler: Scheduler): http
         if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
         const result = await scheduler.runOnce();
         return sendJson(res, result.status === "busy" ? 409 : 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/launch") {
+        // n8n pipeline hands over a finished coin; the bot enforces limits, signs and sends.
+        if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });
+        let body: unknown;
+        try {
+          body = JSON.parse(await readBody(req, 64_000));
+        } catch {
+          return sendJson(res, 400, { status: "invalid", reason: "body must be JSON (max 64 KB)" });
+        }
+        const r = await runExternalLaunch(deps, body);
+        const code = r.status === "invalid" ? 400 : r.status === "busy" ? 409 : r.status === "failed" ? 502 : 200;
+        return sendJson(res, code, r);
       }
       if (req.method === "POST" && url.pathname === "/collect-fees") {
         if (!authorized(req, cfg)) return sendJson(res, 401, { error: "unauthorized" });

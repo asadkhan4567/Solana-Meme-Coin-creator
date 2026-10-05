@@ -1,0 +1,767 @@
+{
+  "name": "Meme Coin Agent — Autonomous Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🤖 Autonomous Meme Coin Agent\nSchedule → **Trend Scout** (DexScreener) → two **Writer Agents** (Gemini) → **Judge Agent** → **Logo Artist** (Pollinations Flux) → **IPFS** (Pinata) → **your bot** signs & launches on pump.fun.\n\nThe bot enforces daily limits, the name filter and DRY_RUN. Nothing is sold automatically.",
+        "width": 520,
+        "height": 260,
+        "color": 6
+      },
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Setup (credentials → *Header Auth*)\n1. **Gemini API key**: name `x-goog-api-key`, value = your key (aistudio.google.com/apikey)\n2. **Pinata JWT**: name `Authorization`, value `Bearer <JWT>`\n3. **Meme Bot**: name `Authorization`, value `Bearer <AGENT_API_TOKEN>`\n4. Activate the workflow. The bot checks in its tunnel URL automatically.",
+        "width": 520,
+        "height": 260,
+        "color": 4
+      },
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        -130
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Run Now (test)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stop quietly outside launch hours (manual test runs ignore the clock).\n// LAUNCH_HOURS_UTC: same window as the bot (13-23 UTC = 6 PM-4 AM Pakistan time).\nconst LAUNCH_HOURS_UTC = [13, 23];\nconst s = $getWorkflowStaticData('global');\nconst manual = $execution.mode === 'manual';\nconst h = new Date().getUTCHours();\nif (!manual && (h < LAUNCH_HOURS_UTC[0] || h > LAUNCH_HOURS_UTC[1])) return [];\nif (!s.agentUrl) {\n  // The bot checks in with its tunnel URL on startup (see the Agent check-in webhook).\n  throw new Error('Bot URL unknown: start the bot (it checks in automatically) or wait for its check-in.');\n}\nreturn [{ json: { agentUrl: s.agentUrl, startedAt: new Date().toISOString(), manual } }];"
+      },
+      "name": "Gate: Hours & Bot URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.dexscreener.com/token-boosts/top/v1",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "DexScreener: Boosts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://api.dexscreener.com/token-profiles/latest/v1",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "DexScreener: Profiles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Trend Scout: score words that keep showing up in fresh Solana token boosts/profiles.\nconst STOP = new Set(('the a an and or of to in on for with is are be this that it its at by from as your you we our us ' +\n 'token coin meme memecoin crypto solana sol pump fun pumpfun community holders official new first only just ' +\n 'will can get all more most best next big real time join now buy hold moon gem launch fair x com www https http ' +\n 'twitter telegram website app ai about every small super model possibilities agents fees').split(' '));\nconst BLOCKED = new Set([\"trump\", \"melania\", \"barron\", \"biden\", \"harris\", \"obama\", \"elon\", \"musk\", \"bezos\", \"zuckerberg\", \"zuck\", \"saylor\", \"cz\", \"binance\", \"coinbase\", \"kraken\", \"tesla\", \"spacex\", \"apple\", \"google\", \"microsoft\", \"amazon\", \"nvidia\", \"openai\", \"chatgpt\", \"anthropic\", \"claude\", \"meta\", \"nike\", \"disney\", \"pixar\", \"marvel\", \"pokemon\", \"pikachu\", \"nintendo\", \"mickey\", \"official\", \"airdrop\", \"giveaway\", \"presale\", \"rug\", \"scam\", \"pepe\", \"doge\", \"shib\", \"bonk\", \"wif\", \"popcat\", \"solana\", \"usdc\", \"usdt\", \"tether\", \"bitcoin\", \"btc\", \"eth\", \"ethereum\", \"sol\"]);\nconst COOLDOWN_H = 48, MIN_SCORE = 0.55;\nconst s = $getWorkflowStaticData('global');\ns.recentThemes = (s.recentThemes || []).filter(t => Date.now() - t.at < COOLDOWN_H * 3600e3);\nconst recent = new Set(s.recentThemes.map(t => t.theme));\n\nconst rows = [...$('DexScreener: Boosts').all(), ...$('DexScreener: Profiles').all()]\n  .map(i => i.json).filter(t => t && t.chainId === 'solana');\nconst seen = new Set(), counts = {}, weight = {};\nfor (const t of rows) {\n  if (seen.has(t.tokenAddress)) continue; seen.add(t.tokenAddress);\n  const text = [t.description || '', t.url || ''].join(' ').toLowerCase();\n  const words = new Set(text.split(/[^a-z]+/).filter(w => w.length >= 4 && w.length <= 14 && !STOP.has(w) && !BLOCKED.has(w)));\n  for (const w of words) { counts[w] = (counts[w] || 0) + 1; weight[w] = (weight[w] || 0) + (t.totalAmount || t.amount || 1); }\n}\nconst ranked = Object.keys(counts)\n  .map(w => ({ theme: w, mentions: counts[w], score: Math.min(1, 0.35 + 0.15 * counts[w] + Math.min(0.15, (weight[w] || 0) / 5000)) }))\n  .sort((a, b) => b.score - a.score || b.mentions - a.mentions);\nconst pick = ranked.find(r => !recent.has(r.theme) && r.score >= MIN_SCORE);\nif (!pick) return [];  // nothing strong enough: skip this cycle, spend nothing\nreturn [{ json: { ...pick, sources: ['dexscreener'], scanned: seen.size, top5: ranked.slice(0, 5).map(r => r.theme + ':' + r.score.toFixed(2)) } }];"
+      },
+      "name": "Trend Scout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a degen crypto copywriter with sharp, punchy humor who invents Solana meme coins for pump.fun. Trend word: \"' + $('Trend Scout').first().json.theme + '\". Invent ONE original coin built around it. Rules: never use real people, brands, celebrities or existing famous coins/tickers; no promises of profit. Reply ONLY with JSON: {\"name\": 2-32 chars, \"ticker\": 3-8 uppercase letters, \"description\": one absurd funny sentence max 200 chars, \"imagePrompt\": vivid description of ONE cartoon mascot for the logo, no text, \"twitterHook\": short punchy line}' }] }], generationConfig: { temperature: 1.1, responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Writer Agent A (degen)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Gemini API key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a surreal absurdist comedian who loves weird animal mascots who invents Solana meme coins for pump.fun. Trend word: \"' + $('Trend Scout').first().json.theme + '\". Invent ONE original coin built around it. Rules: never use real people, brands, celebrities or existing famous coins/tickers; no promises of profit. Reply ONLY with JSON: {\"name\": 2-32 chars, \"ticker\": 3-8 uppercase letters, \"description\": one absurd funny sentence max 200 chars, \"imagePrompt\": vivid description of ONE cartoon mascot for the logo, no text, \"twitterHook\": short punchy line}' }] }], generationConfig: { temperature: 1.3, responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Writer Agent B (absurdist)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        220
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Gemini API key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "name": "Both Writers Done",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1440,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect both writers' concepts; drop any that failed or break the rules.\nconst BLOCKED = [\"trump\", \"melania\", \"barron\", \"biden\", \"harris\", \"obama\", \"elon\", \"musk\", \"bezos\", \"zuckerberg\", \"zuck\", \"saylor\", \"cz\", \"binance\", \"coinbase\", \"kraken\", \"tesla\", \"spacex\", \"apple\", \"google\", \"microsoft\", \"amazon\", \"nvidia\", \"openai\", \"chatgpt\", \"anthropic\", \"claude\", \"meta\", \"nike\", \"disney\", \"pixar\", \"marvel\", \"pokemon\", \"pikachu\", \"nintendo\", \"mickey\", \"official\", \"airdrop\", \"giveaway\", \"presale\", \"rug\", \"scam\", \"pepe\", \"doge\", \"shib\", \"bonk\", \"wif\", \"popcat\", \"solana\", \"usdc\", \"usdt\", \"tether\", \"bitcoin\", \"btc\", \"eth\", \"ethereum\", \"sol\"];\nconst words = s => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);\nfunction allowed(c) {\n  const toks = new Set([...words(c.name), ...words(c.ticker)]), compact = (c.name + c.ticker).toLowerCase().replace(/[^a-z0-9]/g, '');\n  for (const b of BLOCKED) if (toks.has(b) || (b.length >= 4 && compact.includes(b))) return 'blocked term ' + b;\n  if (!/^[A-Z0-9]{2,10}$/.test(c.ticker)) return 'bad ticker';\n  if (c.name.length < 2 || c.name.length > 32) return 'bad name length';\n  if (!c.description || c.description.length < 10) return 'description too short';\n  return null;\n}\nconst out = [], rejected = [];\nfor (const [author, node] of [['writer-a', 'Writer Agent A (degen)'], ['writer-b', 'Writer Agent B (absurdist)']]) {\n  try {\n    const txt = $(node).first().json.candidates[0].content.parts[0].text;\n    const c = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));\n    c.ticker = String(c.ticker || '').replace(/^\\$/, '').toUpperCase(); c.name = String(c.name || '').trim();\n    const why = allowed(c);\n    if (why) rejected.push(author + ': ' + why); else out.push({ author, ...c });\n  } catch (e) { rejected.push(author + ': ' + e.message); }\n}\nif (!out.length) throw new Error('No usable concept. ' + rejected.join(' | '));\nreturn [{ json: { concepts: out, rejected, theme: $('Trend Scout').first().json.theme } }];"
+      },
+      "name": "Collect Concepts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You judge meme coin concepts for the trend \"' + $json.theme + '\". Score each 0-10 for humor, memorability, ticker punchiness and fit to the trend. Penalize anything resembling a real person, brand or existing coin. Concepts: ' + JSON.stringify($json.concepts.map((c, i) => ({ i, name: c.name, ticker: c.ticker, description: c.description }))) + '. Reply ONLY with JSON {\"scores\": [one number per concept, same order], \"why\": short reason}' }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Judge Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Gemini API key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pick the judge's favourite (falls back to the first concept if the judge failed).\nconst { concepts, theme } = $('Collect Concepts').first().json;\nlet scores = [], why = '';\ntry {\n  const txt = $input.first().json.candidates[0].content.parts[0].text;\n  const j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));\n  scores = (j.scores || []).map(Number); why = j.why || '';\n} catch (e) { why = 'judge failed: ' + e.message; }\nconst ranked = concepts.map((c, i) => ({ ...c, score: Math.max(0, Math.min(10, scores[i] || 0)) })).sort((a, b) => b.score - a.score);\nconst w = ranked[0];\nreturn [{ json: { ...w, theme, judgeWhy: why, scoreboard: ranked.map(r => r.author + ':' + r.score) } }];"
+      },
+      "name": "Pick Winner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://image.pollinations.ai/prompt/' + encodeURIComponent($json.imagePrompt + '. Square meme-coin logo, single bold mascot centered, thick clean outlines, vivid flat colors, simple solid background, high contrast, no text, no letters, no watermark') + '?width=1024&height=1024&model=flux&nologo=true&seed=' + Math.floor(Math.random() * 1e9) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Logo Artist (Flux)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pinata.cloud/pinning/pinFileToIPFS",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "IPFS: Upload Logo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Pinata JWT"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build pump.fun metadata pointing at the pinned logo.\nconst w = $('Pick Winner').first().json;\nconst img = $input.first().json.IpfsHash;\nif (!img) throw new Error('Pinata did not return a hash for the logo');\nreturn [{ json: {\n  pinataContent: { name: w.name, symbol: w.ticker, description: w.description, image: 'https://ipfs.io/ipfs/' + img, showName: true, createdOn: 'https://pump.fun' },\n  pinataMetadata: { name: w.ticker + '-metadata.json' },\n  imageCid: img,\n} }];"
+      },
+      "name": "Build Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pinata.cloud/pinning/pinJSONToIPFS",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ pinataContent: $json.pinataContent, pinataMetadata: $json.pinataMetadata }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "IPFS: Upload Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3120,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Pinata JWT"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Gate: Hours & Bot URL').first().json.agentUrl + '/launch' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Pick Winner').first().json.name, ticker: $('Pick Winner').first().json.ticker, description: $('Pick Winner').first().json.description, metadataUri: 'https://ipfs.io/ipfs/' + $json.IpfsHash, imageUri: 'https://ipfs.io/ipfs/' + $('Build Metadata').first().json.imageCid, theme: $('Trend Scout').first().json.theme, trendScore: $('Trend Scout').first().json.score, sources: $('Trend Scout').first().json.sources, llmWinner: $('Pick Winner').first().json.author, imageWinner: 'pollinations-flux' }) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Bot: Sign & Launch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Meme Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summarize the run and remember the theme so it isn't reused for 48h.\nconst r = $input.first().json, w = $('Pick Winner').first().json, t = $('Trend Scout').first().json;\nconst ok = r.status === 'dry_run' || r.status === 'launched';\nif (ok) {\n  const s = $getWorkflowStaticData('global');\n  s.recentThemes = [...(s.recentThemes || []), { theme: t.theme, at: Date.now() }].slice(-200);\n}\nconst lines = [\n  (r.status === 'launched' ? '🚀 LAUNCHED' : r.status === 'dry_run' ? '🧪 Dry run' : '⚠️ ' + (r.status || 'error')) + ': ' + w.name + ' ($' + w.ticker + ')',\n  'Trend: ' + t.theme + ' (' + t.score.toFixed(2) + ')  |  writer: ' + w.author,\n  w.description,\n  r.pumpUrl ? r.pumpUrl : (r.reason ? 'Reason: ' + r.reason : ''),\n].filter(Boolean);\nreturn [{ json: { ok, status: r.status, message: lines.join('\\n'), result: r } }];"
+      },
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3600,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Launched?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3840,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "disable_web_page_preview": false
+        }
+      },
+      "name": "Telegram: Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4080,
+        0
+      ],
+      "disabled": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "name": "Telegram: Problem",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4080,
+        220
+      ],
+      "disabled": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meme-agent-url",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Agent Check-in",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        520
+      ],
+      "webhookId": "meme-agent-url",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Meme Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The bot calls this webhook on startup with its current Cloudflare tunnel URL.\nconst url = String(($json.body || {}).url || '');\nif (!/^https:\\/\\/[a-z0-9-]+\\.trycloudflare\\.com$/.test(url) && !/^https:\\/\\/[a-z0-9.-]+$/.test(url)) throw new Error('bad url: ' + url);\nconst s = $getWorkflowStaticData('global');\ns.agentUrl = url; s.agentSeenAt = new Date().toISOString();\nreturn [{ json: { saved: url } }];"
+      },
+      "name": "Save Bot URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Optional alerts\nAdd a Telegram credential (bot token from @BotFather), set your chat ID, then enable these two nodes.",
+        "width": 340,
+        "height": 150,
+        "color": 5
+      },
+      "name": "Telegram note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3990,
+        -200
+      ]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Gate: Hours & Bot URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Now (test)": {
+      "main": [
+        [
+          {
+            "node": "Gate: Hours & Bot URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate: Hours & Bot URL": {
+      "main": [
+        [
+          {
+            "node": "DexScreener: Boosts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DexScreener: Boosts": {
+      "main": [
+        [
+          {
+            "node": "DexScreener: Profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DexScreener: Profiles": {
+      "main": [
+        [
+          {
+            "node": "Trend Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trend Scout": {
+      "main": [
+        [
+          {
+            "node": "Writer Agent A (degen)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Writer Agent B (absurdist)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Writer Agent A (degen)": {
+      "main": [
+        [
+          {
+            "node": "Both Writers Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Writer Agent B (absurdist)": {
+      "main": [
+        [
+          {
+            "node": "Both Writers Done",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Both Writers Done": {
+      "main": [
+        [
+          {
+            "node": "Collect Concepts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Concepts": {
+      "main": [
+        [
+          {
+            "node": "Judge Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Judge Agent": {
+      "main": [
+        [
+          {
+            "node": "Pick Winner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Winner": {
+      "main": [
+        [
+          {
+            "node": "Logo Artist (Flux)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Logo Artist (Flux)": {
+      "main": [
+        [
+          {
+            "node": "IPFS: Upload Logo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IPFS: Upload Logo": {
+      "main": [
+        [
+          {
+            "node": "Build Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Metadata": {
+      "main": [
+        [
+          {
+            "node": "IPFS: Upload Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IPFS: Upload Metadata": {
+      "main": [
+        [
+          {
+            "node": "Bot: Sign & Launch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot: Sign & Launch": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report": {
+      "main": [
+        [
+          {
+            "node": "Launched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Launched?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Problem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Check-in": {
+      "main": [
+        [
+          {
+            "node": "Save Bot URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "pinData": {}
+}
