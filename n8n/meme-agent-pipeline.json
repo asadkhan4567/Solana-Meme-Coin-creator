@@ -62,7 +62,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Stop quietly outside launch hours (manual test runs ignore the clock).\n// LAUNCH_HOURS_UTC: same window as the bot (13-23 UTC = 6 PM-4 AM Pakistan time).\nconst LAUNCH_HOURS_UTC = [13, 23];\nconst s = $getWorkflowStaticData('global');\nconst manual = $execution.mode === 'manual';\nconst h = new Date().getUTCHours();\nif (!manual && (h < LAUNCH_HOURS_UTC[0] || h > LAUNCH_HOURS_UTC[1])) return [];\nif (!s.agentUrl) {\n  // The bot checks in with its tunnel URL on startup (see the Agent check-in webhook).\n  throw new Error('Bot URL unknown: start the bot (it checks in automatically) or wait for its check-in.');\n}\nreturn [{ json: { agentUrl: s.agentUrl, startedAt: new Date().toISOString(), manual } }];"
+        "jsCode": "// Stop quietly outside launch hours (manual test runs ignore the clock).\n// LAUNCH_HOURS_UTC: same window as the bot (13-23 UTC = 6 PM-4 AM Pakistan time).\nconst LAUNCH_HOURS_UTC = [13, 23];\nconst s = $getWorkflowStaticData('global');\nconst manual = $execution.mode === 'test';\nconst h = new Date().getUTCHours();\nif (!manual && (h < LAUNCH_HOURS_UTC[0] || h > LAUNCH_HOURS_UTC[1])) return [];\nif (!s.agentUrl) {\n  // The bot checks in with its tunnel URL on startup (see the Agent check-in webhook).\n  throw new Error('Bot URL unknown: start the bot (it checks in automatically) or wait for its check-in.');\n}\nreturn [{ json: { agentUrl: s.agentUrl, startedAt: new Date().toISOString(), manual } }];"
       },
       "name": "Gate: Hours & Bot URL",
       "type": "n8n-nodes-base.code",
