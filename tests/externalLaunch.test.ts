@@ -97,3 +97,21 @@ describe("POST /generate-logo", () => {
     expect((await fetch(url(), { method: "POST", headers: { Authorization: "Bearer tok" }, body: "{}" })).status).toBe(400);
   });
 });
+
+describe("HuggingFaceProvider", () => {
+  it("posts to the router and decodes the base64 image", async () => {
+    const { HuggingFaceProvider } = await import("../src/lib/imageGen.js");
+    let seen: { url: string; body: any; auth: string | null } | undefined;
+    const fake = (async (url: string, init: RequestInit) => {
+      seen = { url, body: JSON.parse(String(init.body)), auth: new Headers(init.headers).get("authorization") };
+      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("PNGDATA").toString("base64") }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const p = new HuggingFaceProvider("hf_x", "black-forest-labs/FLUX.1-schnell", "nscale", fake);
+    const img = await p.generate("a lobster");
+    expect(img.toString()).toBe("PNGDATA");
+    expect(p.name).toBe("hf-flux.1-schnell");
+    expect(seen!.url).toBe("https://router.huggingface.co/nscale/v1/images/generations");
+    expect(seen!.auth).toBe("Bearer hf_x");
+    expect(seen!.body.model).toBe("black-forest-labs/FLUX.1-schnell");
+  });
+});

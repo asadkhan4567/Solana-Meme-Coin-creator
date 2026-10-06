@@ -91,8 +91,39 @@ export class PollinationsProvider implements ImageProvider {
   }
 }
 
+/** Hugging Face Inference Providers, OpenAI-compatible images endpoint (e.g. FLUX.1-schnell on nscale). */
+export class HuggingFaceProvider implements ImageProvider {
+  readonly name: string;
+
+  constructor(
+    private readonly token: string,
+    private readonly model: string,
+    private readonly provider: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {
+    this.name = `hf-${model.split("/").pop()!.toLowerCase()}`;
+  }
+
+  async generate(prompt: string): Promise<Buffer> {
+    const res = await httpJson<{ data?: { b64_json?: string; url?: string }[] }>(
+      `https://router.huggingface.co/${this.provider}/v1/images/generations`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.model, prompt: logoPrompt(prompt), response_format: "b64_json" }),
+      },
+      { fetchImpl: this.fetchImpl, timeoutMs: 120_000, retries: 2, label: this.name },
+    );
+    const img = res.data?.[0];
+    if (img?.b64_json) return Buffer.from(img.b64_json, "base64");
+    if (img?.url) return httpBytes(img.url, { fetchImpl: this.fetchImpl });
+    throw new Error(`${this.name} returned no image`);
+  }
+}
+
 export function buildImageProviders(cfg: Config): ImageProvider[] {
   const out: ImageProvider[] = [];
+  if (cfg.HF_TOKEN) out.push(new HuggingFaceProvider(cfg.HF_TOKEN, cfg.HF_IMAGE_MODEL, cfg.HF_IMAGE_PROVIDER));
   if (cfg.POLLINATIONS_ENABLED) {
     // Two free contestants so the AI judge still has a choice.
     out.push(new PollinationsProvider("flux-free", "flux", cfg.POLLINATIONS_TOKEN));

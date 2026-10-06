@@ -69,6 +69,10 @@ const schema = z.object({
   GEMINI_API_KEY: str(),
   GEMINI_MODEL: strDefault("gemini-2.5-flash"),
   // Pollinations: free Flux image API, no key. Set false to disable.
+  // Hugging Face Inference Providers (free monthly credits): FLUX.1-schnell via nscale.
+  HF_TOKEN: str(),
+  HF_IMAGE_MODEL: strDefault("black-forest-labs/FLUX.1-schnell"),
+  HF_IMAGE_PROVIDER: strDefault("nscale"),
   POLLINATIONS_ENABLED: bool(true),
   POLLINATIONS_TOKEN: str(),
 
@@ -138,8 +142,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (cfg.MIN_TREND_SCORE < 0 || cfg.MIN_TREND_SCORE >= 1) problems.push("MIN_TREND_SCORE must be in [0, 1)");
   if (!cfg.OPENAI_API_KEY && !cfg.ANTHROPIC_API_KEY && !cfg.GROQ_API_KEY && !cfg.GEMINI_API_KEY && !cfg.OLLAMA_ENABLED)
     problems.push("set at least one LLM: OLLAMA_ENABLED=true (local, free), GROQ_API_KEY / GEMINI_API_KEY (free) or OPENAI_API_KEY / ANTHROPIC_API_KEY");
-  if (!cfg.OPENAI_API_KEY && !cfg.FAL_KEY && !cfg.POLLINATIONS_ENABLED)
-    problems.push("enable an image provider: POLLINATIONS_ENABLED=true (free), OPENAI_API_KEY or FAL_KEY");
+  if (!cfg.OPENAI_API_KEY && !cfg.FAL_KEY && !cfg.POLLINATIONS_ENABLED && !cfg.HF_TOKEN)
+    problems.push("enable an image provider: HF_TOKEN or POLLINATIONS_ENABLED=true (free), OPENAI_API_KEY or FAL_KEY");
 
   if (!cfg.DRY_RUN) {
     if (!cfg.SIGNER_PRIVATE_KEY) problems.push("DRY_RUN=false requires SIGNER_PRIVATE_KEY");
