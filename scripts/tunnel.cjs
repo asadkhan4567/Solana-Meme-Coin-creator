@@ -63,3 +63,22 @@ cf.on("error", (err) => {
   process.exit(1);
 });
 setInterval(checkIn, 30 * 60 * 1000);
+
+// Self-heal: quick-tunnel URLs die after sleep or network changes while cloudflared keeps running.
+// Probe our own public /health every 5 minutes; after 3 straight failures, exit so the
+// start-tunnel loop restarts cloudflared with a fresh URL (which is then reported to n8n).
+let misses = 0;
+setInterval(async () => {
+  if (!publicUrl) return;
+  try {
+    const r = await fetch(`${publicUrl}/health`, { signal: AbortSignal.timeout(15000) });
+    misses = r.ok ? 0 : misses + 1;
+  } catch {
+    misses++;
+  }
+  if (misses >= 3) {
+    log("tunnel unreachable 3x, restarting", { url: publicUrl });
+    cf.kill();
+    process.exit(1);
+  }
+}, 5 * 60 * 1000);
